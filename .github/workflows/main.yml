@@ -19,5 +19,5 @@ jobs:
     - name: Deploy
       uses: JamesIves/github-pages-deploy-action@v4
       with:
-        path: dist
+        folder: dist  # Promijenjeno iz 'path' u 'folder'
         branch: gh-pages
