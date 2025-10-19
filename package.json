@@ -39,7 +39,8 @@
     "topola": "^3.8.1",
     "turbocommons-ts": "^3.8.0",
     "unified": "^11.0.5",
-    "wikitree-js": "^0.4.0"
+    "wikitree-js": "^0.4.0",
+    "crypto-js": "^4.2.0"
   },
   "devDependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
