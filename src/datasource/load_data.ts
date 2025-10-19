@@ -1,4 +1,6 @@
 import {Buffer} from 'buffer';
+import AES from 'crypto-js/aes';
+import Utf8 from 'crypto-js/enc-utf8';
 import {strFromU8, unzip, Unzipped} from 'fflate';
 import {IndiInfo, JsonGedcomData} from 'topola';
 import {analyticsEvent} from '../util/analytics';
@@ -22,6 +24,14 @@ export function getSelection(
       : data.indis[0].id;
   return {id, generation: selection?.generation || 0};
 }
+// Encryption helpers and static session key.
+const SESSION_STORAGE_KEY = 'topola-session-key';  // In production, generate per session/user if possible for added security.
+function encrypt(data: string, key: string): string {
+  return AES.encrypt(data, key).toString();
+}
+function decrypt(cipherText: string, key: string): string {
+  return AES.decrypt(cipherText, key).toString(Utf8);
+}
 
 function prepareData(
   gedcom: string,
@@ -31,7 +41,8 @@ function prepareData(
   const data = convertGedcom(gedcom, images || new Map());
   const serializedData = JSON.stringify(data);
   try {
-    sessionStorage.setItem(cacheId, serializedData);
+    const encryptedData = encrypt(serializedData, SESSION_STORAGE_KEY);
+    sessionStorage.setItem(cacheId, encryptedData);
   } catch (e) {
     console.warn('Failed to store data in session storage: ' + e);
   }
