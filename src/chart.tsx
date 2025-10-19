@@ -238,13 +238,13 @@ interface RenderArgs {
 function getChartType(chartType: ChartType): ChartHandle<JsonIndi, JsonFam> {
   switch (chartType) {
     case ChartType.Hourglass:
-      return new HourglassChart();
+      return new HourglassChart<JsonIndi, JsonFam>();
     case ChartType.Relatives:
-      return new RelativesChart();
+      return new RelativesChart<JsonIndi, JsonFam>();
     case ChartType.Fancy:
-      return new FancyChart();
+      return new FancyChart<JsonIndi, JsonFam>();
     default:
-      return new HourglassChart();
+      return new HourglassChart<JsonIndi, JsonFam>();
   }
 }
 
@@ -288,12 +288,13 @@ function calculateScaleExtent(
 /** Custom renderer for custom line styles. */
 class CustomRenderer extends DetailedRenderer {
   constructor() {
-    super(); // Call super without args if no args needed
+    super(); // No args needed
   }
 
   renderLink(link: any) {
     const path = super.renderLink(link); // Call original
     // Style based on parent's sex: male = solid black; female = dashed red
+    // Assuming link.source.data.sex is available
     if (link.source.data.sex === 'M') {
       path.style('stroke', 'black').style('stroke-dasharray', 'none');
     } else if (link.source.data.sex === 'F') {
@@ -336,10 +337,13 @@ class ChartWrapper {
     }
 
     // Filter data for unique individuals (use Map by id to remove duplicates)
-    const uniqueIndis = new Map();
+    const uniqueIndis = new Map<string, JsonIndi>();
     props.data.indis.forEach((indi) => {
       if (!uniqueIndis.has(indi.id)) {
         uniqueIndis.set(indi.id, indi);
+      } else {
+        // If duplicate, merge or keep first - here keep first
+        console.warn(`Duplicate indi found: ${indi.id} - keeping first occurrence`);
       }
     });
     const filteredData = { ...props.data, indis: Array.from(uniqueIndis.values()) };
@@ -357,12 +361,12 @@ class ChartWrapper {
         updateSvgSize: false,
         locale: intl.locale,
       });
-    } else {
-      // Check if chart supports setData (avoid error for types that don't)
-      if ('setData' in this.chart!) {
+    } else if (this.chart) {
+      // Conditional update: only if chart supports setData
+      if ('setData' in this.chart) {
         this.chart.setData(filteredData);
       } else {
-        // If not, recreate chart (fallback for types without setData)
+        // Recreate for charts without setData (e.g. Fancy)
         this.chart = createChart({
           json: filteredData,
           chartType: getChartType(props.chartType),
