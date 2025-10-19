@@ -288,13 +288,12 @@ function calculateScaleExtent(
 /** Custom renderer for custom line styles. */
 class CustomRenderer extends DetailedRenderer {
   constructor() {
-    super(); // No args needed
+    super(); // No args for DetailedRenderer
   }
 
   renderLink(link: any) {
     const path = super.renderLink(link); // Call original
     // Style based on parent's sex: male = solid black; female = dashed red
-    // Assuming link.source.data.sex is available
     if (link.source.data.sex === 'M') {
       path.style('stroke', 'black').style('stroke-dasharray', 'none');
     } else if (link.source.data.sex === 'F') {
@@ -342,8 +341,11 @@ class ChartWrapper {
       if (!uniqueIndis.has(indi.id)) {
         uniqueIndis.set(indi.id, indi);
       } else {
-        // If duplicate, merge or keep first - here keep first
-        console.warn(`Duplicate indi found: ${indi.id} - keeping first occurrence`);
+        // Merge rels if duplicate (to handle pedigree collapse)
+        const existing = uniqueIndis.get(indi.id)!;
+        existing.fams = [...new Set([...(existing.fams || []), ...(indi.fams || [])]];
+        existing.famc = indi.famc || existing.famc; // Prefer first or merge
+        // Add more merge logic if needed for other fields
       }
     });
     const filteredData = { ...props.data, indis: Array.from(uniqueIndis.values()) };
@@ -362,11 +364,11 @@ class ChartWrapper {
         locale: intl.locale,
       });
     } else if (this.chart) {
-      // Conditional update: only if chart supports setData
-      if ('setData' in this.chart) {
-        this.chart.setData(filteredData);
+      // Conditional update: only if chart has setData
+      if ('setData' in this.chart && typeof (this.chart as any).setData === 'function') {
+        (this.chart as any).setData(filteredData);
       } else {
-        // Recreate for charts without setData (e.g. Fancy)
+        // Recreate for charts without setData
         this.chart = createChart({
           json: filteredData,
           chartType: getChartType(props.chartType),
