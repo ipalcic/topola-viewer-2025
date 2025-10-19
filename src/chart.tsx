@@ -21,7 +21,9 @@ import {
   FancyChart,
   HourglassChart,
   IndiInfo,
+  JsonFam,
   JsonGedcomData,
+  JsonIndi,
   RelativesChart,
   ChartColors as TopolaChartColors,
 } from 'topola';
@@ -233,7 +235,7 @@ interface RenderArgs {
 }
 
 /** Maps chart type to topola chart type. */
-function getChartType(chartType: ChartType): ChartHandle {
+function getChartType(chartType: ChartType): ChartHandle<JsonIndi, JsonFam> {
   switch (chartType) {
     case ChartType.Hourglass:
       return new HourglassChart();
@@ -252,7 +254,7 @@ function getRendererType(chartType: ChartType): DetailedRenderer | CircleRendere
     case ChartType.Fancy:
       return new CircleRenderer();
     default:
-      return new CustomRenderer(); // Custom za ostale
+      return new CustomRenderer();
   }
 }
 
@@ -285,9 +287,13 @@ function calculateScaleExtent(
 
 /** Custom renderer for custom line styles. */
 class CustomRenderer extends DetailedRenderer {
+  constructor() {
+    super(); // Call super without args if no args needed
+  }
+
   renderLink(link: any) {
-    const path = super.renderLink(link); // Call original renderLink
-    // Style based on parent's sex: male (father) = solid black; female (mother) = dashed red
+    const path = super.renderLink(link); // Call original
+    // Style based on parent's sex: male = solid black; female = dashed red
     if (link.source.data.sex === 'M') {
       path.style('stroke', 'black').style('stroke-dasharray', 'none');
     } else if (link.source.data.sex === 'F') {
@@ -299,7 +305,7 @@ class CustomRenderer extends DetailedRenderer {
 
 /** Wrapper class to handle updates to the chart. */
 class ChartWrapper {
-  private chart?: ChartHandle;
+  private chart?: ChartHandle<JsonIndi, JsonFam>;
   private zoomBehavior?: ZoomBehavior<Element, unknown>;
   private animating = false;
   private rerenderRequired = false;
@@ -352,7 +358,23 @@ class ChartWrapper {
         locale: intl.locale,
       });
     } else {
-      this.chart!.setData(filteredData);
+      // Check if chart supports setData (avoid error for types that don't)
+      if ('setData' in this.chart!) {
+        this.chart.setData(filteredData);
+      } else {
+        // If not, recreate chart (fallback for types without setData)
+        this.chart = createChart({
+          json: filteredData,
+          chartType: getChartType(props.chartType),
+          renderer: getRendererType(props.chartType),
+          svgSelector: '#chart',
+          indiCallback: (info) => props.onSelection(info),
+          colors: chartColors().get(props.colors!),
+          animate: true,
+          updateSvgSize: false,
+          locale: intl.locale,
+        });
+      }
     }
     const chartInfo = this.chart!.render({
       startIndi: props.selection.id,
@@ -423,8 +445,6 @@ class ChartWrapper {
       this.animating = false;
       if (this.rerenderRequired) {
         this.rerenderRequired = false;
-        // Use `this.rerenderProps` instead of the props in scope because
-        // the props may have been updated in the meantime.
         this.renderChart(this.rerenderProps!, intl, {
           initialRender: false,
           resetPosition: !!this.rerenderResetPosition,
