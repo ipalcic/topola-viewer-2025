@@ -3,8 +3,8 @@ import react from '@vitejs/plugin-react';
 import viteTsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
-  // depending on your application, base can also be "/"
-  base: '',
+  // Base path za GitHub Pages - koristi ime repoa da assets loadaju ispravno (riješava bijelu stranicu/404 error)
+  base: '/topola-viewer-2025/',
   plugins: [react(), viteTsconfigPaths()],
   server: {
     // this ensures that the browser opens upon server start
