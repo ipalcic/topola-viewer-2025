@@ -341,11 +341,13 @@ class ChartWrapper {
       if (!uniqueIndis.has(indi.id)) {
         uniqueIndis.set(indi.id, indi);
       } else {
-        // Merge rels if duplicate (to handle pedigree collapse)
+        // Merge relations for pedigree collapse (combine fams, famc)
         const existing = uniqueIndis.get(indi.id)!;
-        existing.fams = [...new Set([...(existing.fams || []), ...(indi.fams || [])]];
-        existing.famc = indi.famc || existing.famc; // Prefer first or merge
-        // Add more merge logic if needed for other fields
+        existing.fams = [...new Set([...(existing.fams || []), ...(indi.fams || [])])];
+        if (indi.famc && !existing.famc) {
+          existing.famc = indi.famc;
+        } // Prefer non-null famc
+        // Merge other fields if needed (e.g. sex, name - assume same)
       }
     });
     const filteredData = { ...props.data, indis: Array.from(uniqueIndis.values()) };
@@ -364,11 +366,11 @@ class ChartWrapper {
         locale: intl.locale,
       });
     } else if (this.chart) {
-      // Conditional update: only if chart has setData
-      if ('setData' in this.chart && typeof (this.chart as any).setData === 'function') {
-        (this.chart as any).setData(filteredData);
+      // Conditional update: only if chart is Hourglass or Relatives (they have setData)
+      if (this.chart instanceof HourglassChart || this.chart instanceof RelativesChart) {
+        this.chart.setData(filteredData);
       } else {
-        // Recreate for charts without setData
+        // Recreate for other charts (e.g. Fancy)
         this.chart = createChart({
           json: filteredData,
           chartType: getChartType(props.chartType),
