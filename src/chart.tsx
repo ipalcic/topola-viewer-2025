@@ -21,9 +21,7 @@ import {
   FancyChart,
   HourglassChart,
   IndiInfo,
-  JsonFam,
   JsonGedcomData,
-  JsonIndi,
   RelativesChart,
   ChartColors as TopolaChartColors,
 } from 'topola';
@@ -166,162 +164,170 @@ async function getSvgContentsWithInlinedImages() {
   return new XMLSerializer().serializeToString(svg);
 }
 
-/** Shows the print dialog to print the chart. */
-export async function printChart() {
-  const contents = await getSvgContentsWithInlinedImages();
-  const iframe = document.createElement('iframe');
-  iframe.style.display = 'none';
-  document.body.appendChild(iframe);
-  const pri = iframe.contentWindow;
-  pri!.document.open();
-  pri!.document.write(contents);
-  pri!.document.close();
-  pri!.focus();
-  pri!.print();
-  document.body.removeChild(iframe);
+/** Shows the print dialog to print the currently displayed chart. */
+export function printChart() {
+  const printWindow = document.createElement('iframe');
+  printWindow.style.position = 'absolute';
+  printWindow.style.top = '-1000px';
+  printWindow.style.left = '-1000px';
+  printWindow.onload = () => {
+    printWindow.contentDocument!.open();
+    printWindow.contentDocument!.write(getSvgContents());
+    printWindow.contentDocument!.close();
+    // Doesn't work on Firefox without the setTimeout.
+    setTimeout(() => {
+      printWindow.contentWindow!.focus();
+      printWindow.contentWindow!.print();
+      printWindow.parentNode!.removeChild(printWindow);
+    }, 500);
+  };
+  document.body.appendChild(printWindow);
 }
 
-/** Downloads the chart as PDF. */
-export async function downloadPdf() {
-  const contents = await getSvgContentsWithInlinedImages();
-  const blob = new Blob([contents], {type: 'image/svg+xml'});
-  const image = await loadImage(blob);
-  const canvas = drawImageOnCanvas(image);
-  const pdfBlob = await canvasToBlob(canvas, 'application/pdf');
-  saveAs(pdfBlob, 'chart.pdf');
-}
-
-/** Downloads the chart as PNG. */
-export async function downloadPng() {
-  const contents = await getSvgContentsWithInlinedImages();
-  const blob = new Blob([contents], {type: 'image/svg+xml'});
-  const image = await loadImage(blob);
-  const canvas = drawImageOnCanvas(image);
-  const pngBlob = await canvasToBlob(canvas, 'image/png');
-  saveAs(pngBlob, 'chart.png');
-}
-
-/** Downloads the chart as SVG. */
 export async function downloadSvg() {
   const contents = await getSvgContentsWithInlinedImages();
   const blob = new Blob([contents], {type: 'image/svg+xml'});
-  saveAs(blob, 'chart.svg');
+  saveAs(blob, 'topola.svg');
 }
 
-/** Chart type. */
+async function drawOnCanvas(): Promise<HTMLCanvasElement> {
+  const contents = await getSvgContentsWithInlinedImages();
+  const blob = new Blob([contents], {type: 'image/svg+xml'});
+  return drawImageOnCanvas(await loadImage(blob));
+}
+
+export async function downloadPng() {
+  const canvas = await drawOnCanvas();
+  const blob = await canvasToBlob(canvas, 'image/png');
+  saveAs(blob, 'topola.png');
+}
+
+export async function downloadPdf() {
+  // Lazy load jspdf.
+  const {default: jspdf} = await import('jspdf');
+  const canvas = await drawOnCanvas();
+  const doc = new jspdf({
+    orientation: canvas.width > canvas.height ? 'l' : 'p',
+    unit: 'pt',
+    format: [canvas.width, canvas.height],
+  });
+  doc.addImage(canvas, 'PNG', 0, 0, canvas.width, canvas.height, 'NONE');
+  doc.save('topola.pdf');
+}
+
+/** Supported chart types. */
 export enum ChartType {
-  Hourglass = 'hourglass',
-  Relatives = 'relatives',
-  Fancy = 'fancy',
-  Donatso = 'donatso',
+  Hourglass,
+  Relatives,
+  Donatso,
+  Fancy,
 }
 
-/** Props for the Chart component. */
-interface ChartProps {
-  data: JsonGedcomData;
-  selection: IndiInfo;
-  chartType: ChartType;
-  onSelection: (info: IndiInfo) => void;
-  freezeAnimation: boolean;
-  colors: ChartColors;
-  hideIds: Ids;
-  hideSex: Sex;
-}
+const chartColors = new Map<ChartColors, TopolaChartColors>([
+  [ChartColors.NO_COLOR, TopolaChartColors.NO_COLOR],
+  [ChartColors.COLOR_BY_GENERATION, TopolaChartColors.COLOR_BY_GENERATION],
+  [ChartColors.COLOR_BY_SEX, TopolaChartColors.COLOR_BY_SEX],
+]);
 
-/** Arguments for the renderChart function. */
-interface RenderArgs {
-  initialRender: boolean;
-  resetPosition: boolean;
-}
-
-/** Maps chart type to topola chart type. */
-function getChartType(chartType: ChartType): ChartHandle<JsonIndi, JsonFam> {
+function getChartType(chartType: ChartType) {
   switch (chartType) {
     case ChartType.Hourglass:
-      return new HourglassChart();
+      return HourglassChart;
     case ChartType.Relatives:
-      return new RelativesChart();
+      return RelativesChart;
     case ChartType.Fancy:
-      return new FancyChart();
+      return FancyChart;
     default:
-      return new HourglassChart();
+      // Fall back to hourglass chart.
+      return HourglassChart;
   }
 }
 
-/** Maps chart type to topola renderer type. */
-function getRendererType(chartType: ChartType): DetailedRenderer | CircleRenderer | CustomRenderer {
+function getRendererType(chartType: ChartType) {
   switch (chartType) {
     case ChartType.Fancy:
-      return new CircleRenderer();
+      return CircleRenderer;
     default:
-      return new CustomRenderer();
+      // Use DetailedRenderer by default.
+      return DetailedRenderer;
   }
 }
 
-/** Maps colors config to topola colors. */
-function chartColors() {
-  const mapping = new Map<ChartColors, TopolaChartColors>([
-    [ChartColors.Colored, TopolaChartColors.Colored],
-    [ChartColors.Alternate, TopolaChartColors.Alternate],
-    [ChartColors.LightGrey, TopolaChartColors.LightGrey],
-    [ChartColors.White, TopolaChartColors.White],
-  ]);
-  return {
-    get: (colors: ChartColors) => mapping.get(colors)!,
-  };
+/** Returns the element’s usable width and height by subtracting the assumed scrollbar size. */
+function getScrollbarAwareSize(
+  element: Element,
+  scrollbarSize = 20,
+): [number, number] {
+  const htmlElement = element as HTMLElement;
+  return [
+    htmlElement.clientWidth - scrollbarSize,
+    htmlElement.clientHeight - scrollbarSize,
+  ];
 }
 
-/** Calculates zoom extent. */
+/**
+ * Calculates the allowed zoom scale range.
+ * Sets the minimum scale so the chart cannot zoom out beyond full visibility,
+ * and fixes the maximum scale at 2.
+ */
 function calculateScaleExtent(
   parent: Element,
   scale: number,
   chartInfo: ChartInfo,
 ): [number, number] {
-  const minScale = min([
-    parent.clientWidth / chartInfo.size[0],
-    parent.clientHeight / chartInfo.size[1],
-  ]);
-  const maxScale = 2;
-  return [minScale, maxScale];
+  const [availWidth, availHeight] = getScrollbarAwareSize(parent);
+
+  const zoomOutFactor = min([
+    1,
+    scale,
+    availWidth / chartInfo.size[0],
+    availHeight / chartInfo.size[1],
+  ])!;
+
+  return [max([0.1, zoomOutFactor])!, 2];
 }
 
-/** Custom renderer for custom line styles. */
-class CustomRenderer extends DetailedRenderer {
-  constructor() {
-    super(); // Call super without args if no args needed
-  }
-
-  renderLink(link: any) {
-    const path = super.renderLink(link); // Call original
-    // Style based on parent's sex: male = solid black; female = dashed red
-    if (link.source.data.sex === 'M') {
-      path.style('stroke', 'black').style('stroke-dasharray', 'none');
-    } else if (link.source.data.sex === 'F') {
-      path.style('stroke', 'red').style('stroke-dasharray', '3,3');
-    }
-    return path;
-  }
+export interface ChartProps {
+  data: JsonGedcomData;
+  selection: IndiInfo;
+  chartType: ChartType;
+  onSelection: (indiInfo: IndiInfo) => void;
+  freezeAnimation?: boolean;
+  colors?: ChartColors;
+  hideIds?: Ids;
+  hideSex?: Sex;
 }
 
-/** Wrapper class to handle updates to the chart. */
 class ChartWrapper {
-  private chart?: ChartHandle<JsonIndi, JsonFam>;
-  private zoomBehavior?: ZoomBehavior<Element, unknown>;
+  private chart?: ChartHandle;
+  /** Animation is in progress. */
   private animating = false;
+  /** Rendering is required after the current animation finishes. */
   private rerenderRequired = false;
+  /** The d3 zoom behavior object. */
+  private zoomBehavior?: ZoomBehavior<Element, any>;
+  /** Props that will be used for rerendering. */
   private rerenderProps?: ChartProps;
   private rerenderResetPosition?: boolean;
 
   zoom(factor: number) {
-    const parent = select('#svgContainer').node() as Element;
-    const x = parent.scrollLeft + parent.clientWidth / 2;
-    const y = parent.scrollTop + parent.clientHeight / 2;
-    select(parent)
-      .transition()
-      .call(this.zoomBehavior!.scaleBy, factor, [x, y]);
+    const parent = select('#svgContainer') as Selection<Element, any, any, any>;
+    this.zoomBehavior!.scaleBy(parent, factor);
   }
 
-  renderChart(props: ChartProps, intl: IntlShape, args: RenderArgs) {
+  /**
+   * Renders the chart or performs a transition animation to a new state.
+   * If indiInfo is not given, it means that it is the initial render and no
+   * animation is performed.
+   */
+  renderChart(
+    props: ChartProps,
+    intl: IntlShape,
+    args: {initialRender: boolean; resetPosition: boolean} = {
+      initialRender: false,
+      resetPosition: false,
+    },
+  ) {
     // Wait for animation to finish if animation is in progress.
     if (!args.initialRender && this.animating) {
       this.rerenderRequired = true;
@@ -335,46 +341,21 @@ class ChartWrapper {
       return;
     }
 
-    // Filter data for unique individuals (use Map by id to remove duplicates)
-    const uniqueIndis = new Map();
-    props.data.indis.forEach((indi) => {
-      if (!uniqueIndis.has(indi.id)) {
-        uniqueIndis.set(indi.id, indi);
-      }
-    });
-    const filteredData = { ...props.data, indis: Array.from(uniqueIndis.values()) };
-
     if (args.initialRender) {
       (select('#chart').node() as HTMLElement).innerHTML = '';
       this.chart = createChart({
-        json: filteredData, // Use filtered data
+        json: props.data,
         chartType: getChartType(props.chartType),
-        renderer: getRendererType(props.chartType), // Use CustomRenderer
+        renderer: getRendererType(props.chartType),
         svgSelector: '#chart',
         indiCallback: (info) => props.onSelection(info),
-        colors: chartColors().get(props.colors!),
+        colors: chartColors.get(props.colors!),
         animate: true,
         updateSvgSize: false,
         locale: intl.locale,
       });
     } else {
-      // Check if chart supports setData (avoid error for types that don't)
-      if ('setData' in this.chart!) {
-        this.chart.setData(filteredData);
-      } else {
-        // If not, recreate chart (fallback for types without setData)
-        this.chart = createChart({
-          json: filteredData,
-          chartType: getChartType(props.chartType),
-          renderer: getRendererType(props.chartType),
-          svgSelector: '#chart',
-          indiCallback: (info) => props.onSelection(info),
-          colors: chartColors().get(props.colors!),
-          animate: true,
-          updateSvgSize: false,
-          locale: intl.locale,
-        });
-      }
+      this.chart!.setData(props.data);
     }
     const chartInfo = this.chart!.render({
       startIndi: props.selection.id,
@@ -445,6 +426,8 @@ class ChartWrapper {
       this.animating = false;
       if (this.rerenderRequired) {
         this.rerenderRequired = false;
+        // Use `this.rerenderProps` instead of the props in scope because
+        // the props may have been updated in the meantime.
         this.renderChart(this.rerenderProps!, intl, {
           initialRender: false,
           resetPosition: !!this.rerenderResetPosition,
@@ -480,7 +463,7 @@ export function Chart(props: ChartProps) {
         resetPosition: true,
       });
     }
-  }, [props, intl]);
+  });
 
   return (
     <div id="svgContainer">
