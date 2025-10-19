@@ -252,7 +252,7 @@ function getRendererType(chartType: ChartType): DetailedRenderer | CircleRendere
     case ChartType.Fancy:
       return new CircleRenderer();
     default:
-      return new CustomRenderer(); // Koristi custom za default
+      return new CustomRenderer(); // Custom za ostale
   }
 }
 
@@ -283,14 +283,11 @@ function calculateScaleExtent(
   return [minScale, maxScale];
 }
 
-/** Custom renderer za custom stilove linija. */
+/** Custom renderer for custom line styles. */
 class CustomRenderer extends DetailedRenderer {
   renderLink(link: any) {
-    const path = super.renderLink(link); // Pozovi originalni renderLink
-    // Dodaj logiku za stilove: provjeri spol source/target da odrediš liniju
-    // Muška linija (očevska): puna crna
-    // Ženska linija (majčinska): isprekidana crvena
-    // Pretpostavka: ako source je muški i target nije (djeca), muška; ako source ženski, ženska
+    const path = super.renderLink(link); // Call original renderLink
+    // Style based on parent's sex: male (father) = solid black; female (mother) = dashed red
     if (link.source.data.sex === 'M') {
       path.style('stroke', 'black').style('stroke-dasharray', 'none');
     } else if (link.source.data.sex === 'F') {
@@ -332,7 +329,7 @@ class ChartWrapper {
       return;
     }
 
-    // Filtriraj data za unique osobe (koristi Map po ID-u)
+    // Filter data for unique individuals (use Map by id to remove duplicates)
     const uniqueIndis = new Map();
     props.data.indis.forEach((indi) => {
       if (!uniqueIndis.has(indi.id)) {
@@ -344,9 +341,9 @@ class ChartWrapper {
     if (args.initialRender) {
       (select('#chart').node() as HTMLElement).innerHTML = '';
       this.chart = createChart({
-        json: filteredData, // Koristi filtrirane data
+        json: filteredData, // Use filtered data
         chartType: getChartType(props.chartType),
-        renderer: getRendererType(props.chartType), // Koristi CustomRenderer za Detailed
+        renderer: getRendererType(props.chartType), // Use CustomRenderer
         svgSelector: '#chart',
         indiCallback: (info) => props.onSelection(info),
         colors: chartColors().get(props.colors!),
@@ -438,7 +435,7 @@ class ChartWrapper {
 }
 
 export function Chart(props: ChartProps) {
-  const chartWrapper = new ChartWrapper(); // Koristi ref ako treba, ali za jednostavnost direktno
+  const chartWrapper = useRef(new ChartWrapper());
   const prevProps = usePrevious(props);
   const intl = useIntl();
 
@@ -453,30 +450,30 @@ export function Chart(props: ChartProps) {
         props.chartType !== prevProps?.chartType ||
         props.data !== prevProps.data ||
         props.selection !== prevProps.selection;
-      chartWrapper.renderChart(props, intl, {
+      chartWrapper.current.renderChart(props, intl, {
         initialRender,
         resetPosition,
       });
     } else {
-      chartWrapper.renderChart(props, intl, {
+      chartWrapper.current.renderChart(props, intl, {
         initialRender: true,
         resetPosition: true,
       });
     }
-  }, [props]); // Dodaj dependency na props
+  }, [props, intl]);
 
   return (
     <div id="svgContainer">
       <Media greaterThanOrEqual="large" className="zoom">
         <button
           className="zoom-in"
-          onClick={() => chartWrapper.zoom(ZOOM_FACTOR)}
+          onClick={() => chartWrapper.current.zoom(ZOOM_FACTOR)}
         >
           +
         </button>
         <button
           className="zoom-out"
-          onClick={() => chartWrapper.zoom(1 / ZOOM_FACTOR)}
+          onClick={() => chartWrapper.current.zoom(1 / ZOOM_FACTOR)}
         >
           −
         </button>
